@@ -2,6 +2,7 @@
 
 const IOTA = require('iota.lib.js')
 const ccurl = require('ccurl.interface.js')
+const http = require('http')
 const express = require('express')
 const body = require('body-parser')
 const program = require('commander')
@@ -15,34 +16,76 @@ program
 
 const iota = new IOTA()
 
-const powServer = express()
-powServer.use(body.json())
-powServer.use(body.urlencoded({extended:true}))
-
-var totalrequests = 0
-var averagetime = 0
-
-const postHandler = (req, res) => {
-	// Set custom headers for CORS
-	res.header("Access-Control-Allow-Origin", req.headers.origin) // restrict it to the required domain
-    res.header("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
-    res.header("Access-Control-Allow-Headers", "Content-type,Accept,X-Custom-Header,X-IOTA-API-Version")
-    
-    switch(req.body.command){
-    case 'getNodeInfo':
-    	res.send({
-          appName: 'gagathos/iota-gpu-pow',
-          appVersion: "1.0.0",
-          duration: 1
-        })
-    break
-    case 'getNeighbors':
-    	res.send({neighbors: []})
-    break
-    case 'attachToTangle':
-    	nodeAPI(req, res)
-    break
-    }
+const server = express();
+    server.disable('x-powered-by');
+    server.set('etag', false);
+    server.use(bodyParser.json());
+    server.use(function(req, res){
+        var starttime=Date.now();
+        res.header("Access-Control-Allow-Origin", "*")
+        res.header("Access-Control-Allow-Methods", "POST")
+        if(req.body.command=="getNodeInfo"){
+            res.send({
+              appName: "iota.whitey.pow.node.js",
+              appVersion: "0.0.1",
+              duration: (Date.now()-starttime)
+            })
+        } else if(req.body.command=="attachToTangle"){
+            let fields = req.body;
+            if (typeof(fields.minWeightMagnitude)==="undefined"){
+                res.status(400);
+                res.send({error: "Invalid parameters","duration":(Date.now()-starttime)});
+            } else {
+                fields.minWeightMagnitude=parseInt(fields.minWeightMagnitude);
+                if(fields.minWeightMagnitude > config.maxMwM || fields.minWeightMagnitude < 1){
+                    res.status(400);
+                    res.send({error: "MwM of " + fields.minWeightMagnitude + " is invalid or over max of " + config.maxMwM,"duration":(Date.now()-starttime)});
+                } else if(!fields.trunkTransaction.match(/^[A-Z9]{81}$/)){
+                    res.status(400);
+                    res.send({error: "Invalid trunk transaction","duration":(Date.now()-starttime)});
+                } else if(!fields.branchTransaction.match(/^[A-Z9]{81}$/)){
+                    res.status(400);
+                    res.send({error: "Invalid branch transaction","duration":(Date.now()-starttime)});
+                } else if(!checkTrytes(fields.trytes)){
+                    res.status(400);
+                    res.send({error: "Invalid trytes provided","duration":(Date.now()-starttime)});
+                } else {
+                    var target=0;
+                    var jobcount=10000;
+                    for (var i = 0; i < workers.length; ++i) {
+                        if(workers[i].jobs<jobcount){
+                            target=i;
+                            jobcount=workers[i].jobs;
+                            if(workers[i].jobs==0){
+                              i=workers.length;  
+                            }
+                        };
+                    }
+                    if(jobcount>10){
+                        console.log("Jobcount critical!");
+                    }
+                    let curjob=jobs.length;
+                    jobs[curjob]={req:req,res:res};
+                    workers[target].jobs++;
+                    workers[target].handle.send({fields:fields,job:curjob,worker:target,starttime:starttime});                     
+                }
+            }
+        } else if(req.body.command=="getNeighbors"){
+            res.send({neighbors: [],"duration":(Date.now()-starttime)})
+        } else if(req.body.command=="powInfo"){
+            res.send({total: counters.totalrequests,failed: counters.failedrequests, averagetime: counters.averagetime + 'ms',"duration":(Date.now()-starttime)})
+        } else {
+            res.status(400);
+            res.send({error: "Unknown command!","duration":(Date.now()-starttime)});
+        }
+    });
+    http.createServer(server)
+    .on('connection', function(socket) {
+        socket.setTimeout(60000);
+    })
+    .listen(config.port, config.ip, () => {
+        console.log(getPrintableTime()+" - Bound to "+config.ip+" and listening on and port "+config.port);
+    });
 }
 
 function nodeAPI(req, res){
@@ -81,5 +124,3 @@ function infoPage(req, res){
 	res.send({total: totalrequests, averagetime: averagetime + 'ms'})
 }
 
-const server = powServer.get('*', infoPage).post('*', postHandler)
-server.listen(program.port)
