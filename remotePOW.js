@@ -86,7 +86,6 @@ const server = express();
     .listen(config.port, config.ip, () => {
         console.log(getPrintableTime()+" - Bound to "+config.ip+" and listening on and port "+config.port);
     });
-}
 
 function nodeAPI(req, res){
 	let startTime = Date.now()
