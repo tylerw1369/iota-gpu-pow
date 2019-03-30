@@ -40,10 +40,10 @@ const server = express();
                 if(fields.minWeightMagnitude > config.maxMwM || fields.minWeightMagnitude < 1){
                     res.status(400);
                     res.send({error: "MwM of " + fields.minWeightMagnitude + " is invalid or over max of " + config.maxMwM,"duration":(Date.now()-starttime)});
-                } else if(!fields.trunkTransaction.match(/^[A-Z9]{81}$/)){
+                } else if(!fields.trunkTransaction(/^[A-Z9]{81}$/)){
                     res.status(400);
                     res.send({error: "Invalid trunk transaction","duration":(Date.now()-starttime)});
-                } else if(!fields.branchTransaction.match(/^[A-Z9]{81}$/)){
+                } else if(!fields.branchTransaction(/^[A-Z9]{81}$/)){
                     res.status(400);
                     res.send({error: "Invalid branch transaction","duration":(Date.now()-starttime)});
                 } else if(!checkTrytes(fields.trytes)){
@@ -96,7 +96,7 @@ function nodeAPI(req, res){
 	} else {
 		//ccurl doesn't update attachment timestamp. Let's do it ourselves.
 		let trytes = updateTimestamp(fields.trytes)
-		ccurl(fields.trunkTransaction, fields.branchTransaction, fields.minWeightMagnitude, trytes, program.ccurl, (error, success) => {
+		ccurl(fields.trunkTransaction, fields.branchTransaction, fields.minWeightMagnitude, fields.trytes, program.ccurl, (error, success) => {
 			if(error) console.log(error)
 			res.send({trytes : success}) //emulate node output
 			totalrequests += success.length 
